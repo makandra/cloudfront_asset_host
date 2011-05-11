@@ -18,9 +18,9 @@ GEM
     rack (1.1.0)
     rake (0.8.7)
     redgreen (1.2.2)
-    right_aws (2.0.0)
-      right_http_connection (>= 1.2.1)
-    right_http_connection (1.2.4)
+    right_aws (2.1.0)
+      right_http_connection (>= 1.2.5)
+    right_http_connection (1.3.0)
     shoulda (2.11.3)
     turn (0.7.0)
       ansi (>= 1.1.0)
@@ -35,6 +35,5 @@ DEPENDENCIES
   cloudfront_asset_host!
   mocha
   redgreen
-  right_aws
   shoulda
   turn

@@ -4,3 +4,5 @@ body { background-image: url('/images/image.png'); }
 body { background-image: url("/images/image.png"); }
 body { background-image: url("/images/image.png?98732857"); }
 body { background-image: url("/images/image.png?fo0=bar"); }
+body { background-image: url("/images/image.png#223145"); }
+body { background-image: url(/strange_asset/image.png#223145); }

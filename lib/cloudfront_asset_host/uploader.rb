@@ -29,7 +29,7 @@ module CloudfrontAssetHost
 
             extension = File.extname(path)[1..-1]
 
-            path = rewritten_css_path(path)
+            path = rewritten_css_path(path, key.start_with?(CloudfrontAssetHost.ssl_prefix))
 
             data_path = gzip ? gzipped_path(path) : path
             bucket.put(key, File.read(data_path), {}, 'public-read', headers_for_path(extension, gzip)) unless dryrun
@@ -54,9 +54,9 @@ module CloudfrontAssetHost
         tmp.path
       end
 
-      def rewritten_css_path(path)
+      def rewritten_css_path(path, ssl = false)
         if CloudfrontAssetHost.css?(path)
-          tmp = CloudfrontAssetHost::CssRewriter.rewrite_stylesheet(path)
+          tmp = CloudfrontAssetHost::CssRewriter.rewrite_stylesheet(path, ssl)
           tmp.path
         else
           path
@@ -69,6 +69,13 @@ module CloudfrontAssetHost
           key << CloudfrontAssetHost.key_for_path(path) + path.gsub(Rails.public_path, '')
 
           result[key] = path
+
+          source = path.gsub(Rails.public_path, '')
+          if CloudfrontAssetHost.ssl_stylesheets and CloudfrontAssetHost.css?(source)
+            key = "#{CloudfrontAssetHost.ssl_prefix}/" << CloudfrontAssetHost.key_for_path(path) << source
+            result[key] = path
+          end
+
           result
         end
       end
@@ -79,6 +86,11 @@ module CloudfrontAssetHost
 
           if CloudfrontAssetHost.gzip_allowed_for_source?(source)
             key = "#{CloudfrontAssetHost.gzip_prefix}/" << CloudfrontAssetHost.key_for_path(path) << source
+            result[key] = path
+          end
+
+          if CloudfrontAssetHost.ssl_stylesheets and CloudfrontAssetHost.css?(source)
+            key = "#{CloudfrontAssetHost.ssl_prefix}/#{CloudfrontAssetHost.gzip_prefix}/" << CloudfrontAssetHost.key_for_path(path) << source
             result[key] = path
           end
 
@@ -102,7 +114,13 @@ module CloudfrontAssetHost
       end
 
       def current_paths
-        @current_paths ||= Dir.glob("#{Rails.public_path}/{#{asset_dirs.join(',')}}/**/*").reject { |path| File.directory?(path) }
+        if @current_paths.nil? 
+          @current_paths = Dir.glob("#{Rails.public_path}/{#{asset_dirs.join(',')}}/**/*").reject { |path| File.directory?(path) }
+          @current_paths += CloudfrontAssetHost.additional_files.collect do |additional_file|
+            File.join(Rails.public_path, additional_file)
+          end.reject {|additional_file| !File.exists?(additional_file)}
+        end
+        @current_paths
       end
 
       def headers_for_path(extension, gzip = false)
@@ -110,7 +128,7 @@ module CloudfrontAssetHost
         headers = {
           'Content-Type' => mime,
           'Cache-Control' => "max-age=#{10.years.to_i}",
-          'Expires' => 1.year.from_now.utc.to_s
+          'Expires' => 1.year.from_now.utc.rfc2822
         }
         headers['Content-Encoding'] = 'gzip' if gzip
 

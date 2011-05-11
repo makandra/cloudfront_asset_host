@@ -43,15 +43,16 @@ class UploaderTest < Test::Unit::TestCase
 
     should "calculate keys for paths" do
       keys_with_paths = CloudfrontAssetHost::Uploader.keys_with_paths
-      assert_equal 3, keys_with_paths.length
+      assert_equal 4, keys_with_paths.length
       assert_match %r{/test/app/public/javascripts/application\.js$}, keys_with_paths["#{@js_md5}/javascripts/application.js"]
     end
 
     should "calculate gzip keys for paths" do
       gz_keys_with_paths = CloudfrontAssetHost::Uploader.gzip_keys_with_paths
-      assert_equal 2, gz_keys_with_paths.length
+      assert_equal 3, gz_keys_with_paths.length
       assert_match %r{/test/app/public/javascripts/application\.js$}, gz_keys_with_paths["gz/#{@js_md5}/javascripts/application.js"]
       assert_match %r{/test/app/public/stylesheets/style\.css$},      gz_keys_with_paths["gz/#{@css_md5}/stylesheets/style.css"]
+      assert_match %r{/test/app/public/stylesheets/style\.css$},      gz_keys_with_paths["ssl/gz/#{@css_md5}/stylesheets/style.css"]
     end
 
     should "return a mimetype for an extension" do
@@ -84,7 +85,7 @@ class UploaderTest < Test::Unit::TestCase
 
     should "upload files when there are no existing keys" do
       bucket_mock = mock
-      bucket_mock.expects(:put).times(5)
+      bucket_mock.expects(:put).times(7)
       CloudfrontAssetHost::Uploader.stubs(:bucket).returns(bucket_mock)
       CloudfrontAssetHost::Uploader.stubs(:existing_keys).returns([])
 
@@ -96,7 +97,8 @@ class UploaderTest < Test::Unit::TestCase
       CloudfrontAssetHost::Uploader.stubs(:existing_keys).returns(
         ["gz/#{@js_md5}/javascripts/application.js", "#{@js_md5}/javascripts/application.js",
          "d41d8cd98/images/image.png",
-         "#{@css_md5}/stylesheets/style.css", "gz/#{@css_md5}/stylesheets/style.css"]
+         "#{@css_md5}/stylesheets/style.css", "gz/#{@css_md5}/stylesheets/style.css",
+         "ssl/#{@css_md5}/stylesheets/style.css", "ssl/gz/#{@css_md5}/stylesheets/style.css"]
       )
 
       CloudfrontAssetHost::Uploader.upload!
@@ -104,12 +106,13 @@ class UploaderTest < Test::Unit::TestCase
 
     should "re-upload existing keys w/ force_write" do
       bucket_mock = mock
-      bucket_mock.expects(:put).times(5)
+      bucket_mock.expects(:put).times(7)
       CloudfrontAssetHost::Uploader.stubs(:bucket).returns(bucket_mock)
       CloudfrontAssetHost::Uploader.stubs(:existing_keys).returns(
         ["gz/#{@js_md5}/javascripts/application.js", "#{@js_md5}/javascripts/application.js",
          "d41d8cd98/images/image.png",
-         "#{@css_md5}/stylesheets/style.css", "gz/#{@css_md5}/stylesheets/style.css"]
+         "#{@css_md5}/stylesheets/style.css", "gz/#{@css_md5}/stylesheets/style.css",
+         "ssl/#{@css_md5}/stylesheets/style.css", "ssl/gz/#{@css_md5}/stylesheets/style.css"]
       )
 
       CloudfrontAssetHost::Uploader.upload!(:force_write => true)
@@ -129,9 +132,11 @@ class UploaderTest < Test::Unit::TestCase
       path = File.join(RAILS_ROOT, 'public', 'stylesheets', 'style.css')
       css_path = CloudfrontAssetHost::Uploader.rewritten_css_path(path)
 
-      File.read(css_path).split("\n").each do |line|
+      contents = File.read(css_path).split("\n")
+      contents[0..5].each do |line|
         assert_equal "body { background-image: url(http://assethost.com/d41d8cd98/images/image.png); }", line
       end
+      assert_equal "body { background-image: url(http://assethost.com/d41d8cd98/images/image.png#223145); }", contents[6]
     end
 
   end
@@ -157,6 +162,33 @@ class UploaderTest < Test::Unit::TestCase
       CloudfrontAssetHost::Uploader.stubs(:existing_keys).returns([])
 
       CloudfrontAssetHost::Uploader.upload!
+    end
+  end
+
+  context 'with additional_files' do
+    setup do
+      @css_md5 = md5_key('stylesheets/style.css')       #7026e6ce3
+      @js_md5 =  md5_key('javascripts/application.js')  #8ed41cb87
+      CloudfrontAssetHost.configure do |config|
+        config.cname  = "assethost.com"
+        config.bucket = "bucketname"
+        config.key_prefix = ""
+        config.s3_config = "#{RAILS_ROOT}/config/s3.yml"
+        config.enabled = false
+        config.additional_files = %w(strange_asset/image.png)
+      end
+    end
+
+    should "upload the additional files" do
+      current_paths_before = CloudfrontAssetHost::Uploader.instance_variable_get('@current_paths')
+      CloudfrontAssetHost::Uploader.instance_variable_set('@current_paths', nil)
+      bucket_mock = mock
+      bucket_mock.expects(:put).times(8)
+      CloudfrontAssetHost::Uploader.stubs(:bucket).returns(bucket_mock)
+      CloudfrontAssetHost::Uploader.stubs(:existing_keys).returns([])
+
+      CloudfrontAssetHost::Uploader.upload!
+      CloudfrontAssetHost::Uploader.instance_variable_set('@current_paths', current_paths_before)
     end
   end
 

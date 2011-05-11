@@ -13,6 +13,8 @@ begin require 'turn'; rescue LoadError; end
 
 RAILS_ROOT = File.expand_path(File.join(File.dirname(__FILE__), 'app'))
 
+HOST = 'text.example.com'
+
 module Rails
   class << self
     def root

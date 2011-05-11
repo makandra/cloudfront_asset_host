@@ -34,6 +34,12 @@ module CloudfrontAssetHost
   # Key-prefix under which to store gzipped assets
   mattr_accessor :gzip_prefix
 
+  # Upload special ssl stylesheets
+  mattr_accessor :ssl_stylesheets
+
+  # Key-prefix under which to store ssl-stylesheets
+  mattr_accessor :ssl_prefix
+
   # Key-prefix under which to store plain (unzipped) assets
   mattr_accessor :plain_prefix
 
@@ -45,6 +51,10 @@ module CloudfrontAssetHost
 
   # Key Regular Expression to filter out/exclude content
   mattr_accessor :exclude_pattern
+
+  mattr_accessor :additional_files
+
+  mattr_accessor :asset_host_without_cloudfront
 
   class << self
 
@@ -64,9 +74,15 @@ module CloudfrontAssetHost
       self.gzip_extensions = %w(js css)
       self.gzip_prefix     = "gz"
 
+      self.ssl_stylesheets = true
+      self.ssl_prefix      = "ssl"
+
       self.plain_prefix = ""
 
       self.image_extensions = %w(jpg jpeg gif png)
+
+      self.additional_files = []
+      self.asset_host_without_cloudfront = ''
 
       yield(self)
 
@@ -75,16 +91,26 @@ module CloudfrontAssetHost
       end
     end
 
-    def asset_host(source = nil, request = nil)
+    def asset_host(source = nil, request = nil, force_cdn = false, force_ssl = false)
+      if request
+        protocol = request.protocol
+      else
+        protocol = force_ssl ? 'https://' : 'http://'
+      end
+
+      source_without_parameter = source.gsub(/\?.+$/, '') if source.present?
+      if(!force_cdn && source && File.exists?(File.join(ActionView::Helpers::AssetTagHelper::ASSETS_DIR, source_without_parameter)))
+         return "#{protocol}#{asset_host_without_cloudfront}"
+      end
       if cname.present?
         if cname.is_a?(Proc)
           host = cname.call(source, request)
         else
           host = (cname =~ /%d/) ? cname % (source.hash % 4) : cname.to_s
-          host = "http://#{host}"
+          host = "#{protocol}#{host}"
         end
       else
-        host = "http://#{self.bucket_host}"
+        host = "#{protocol}#{self.bucket_host}"
       end
 
       if source && request && CloudfrontAssetHost.gzip
@@ -96,6 +122,10 @@ module CloudfrontAssetHost
         gzip_accepted = !(user_agent =~ /^Mozilla\/4/) || user_agent =~ /\bMSIE/
         gzip_accepted &&= request.headers['Accept-Encoding'].to_s.include?('gzip')
 
+        if CloudfrontAssetHost.ssl_stylesheets and CloudfrontAssetHost.css?(source) and protocol == 'https://'
+          host << "/#{CloudfrontAssetHost.ssl_prefix}"
+        end
+        
         if gzip_accepted && gzip_allowed
           host << "/#{CloudfrontAssetHost.gzip_prefix}"
         else

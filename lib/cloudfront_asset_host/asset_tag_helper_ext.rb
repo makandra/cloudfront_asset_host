@@ -9,9 +9,16 @@ module ActionView
         if @@cache_asset_timestamps && (asset_id = @@asset_timestamps_cache[source])
           asset_id
         else
-          path = File.join(config.assets_dir, source)
-          rewrite_path = File.exist?(path) && !CloudfrontAssetHost.disable_cdn_for_source?(source)
-          asset_id = rewrite_path ? CloudfrontAssetHost.key_for_path(path) : ''
+          path = File.join(ASSETS_DIR, source)
+          rewrite_path = File.exist?(path) && !CloudfrontAssetHost.disable_cdn_for_source?(source) && CloudfrontAssetHost::Uploader.current_paths.include?(path)
+          asset_id = if rewrite_path 
+                        CloudfrontAssetHost.key_for_path(path) 
+
+                     elsif File.exists?(path)
+                       ("?" + File.mtime(path).to_i.to_s)
+                     else
+                       ''
+                     end
 
           if @@cache_asset_timestamps
             @@asset_timestamps_cache_guard.synchronize do
@@ -28,6 +35,8 @@ module ActionView
         asset_id = rails_asset_id(source)
         if asset_id.blank?
           source
+        elsif asset_id.starts_with?('?')
+          source + asset_id
         else
           "/#{asset_id}#{source}"
         end

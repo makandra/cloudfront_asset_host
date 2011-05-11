@@ -13,10 +13,10 @@ module CloudfrontAssetHost
 
       # Returns the path to the temporary file that contains the
       # rewritten stylesheet
-      def rewrite_stylesheet(path)
+      def rewrite_stylesheet(path, ssl = false)
         contents = File.read(path)
         contents.gsub!(ReplaceRexeg) do |match|
-          rewrite_asset_link(match, path)
+          rewrite_asset_link(match, path, ssl)
         end
 
         tmp = Tempfile.new("cfah-css")
@@ -27,7 +27,7 @@ module CloudfrontAssetHost
 
     private
 
-      def rewrite_asset_link(asset_link, stylesheet_path)
+      def rewrite_asset_link(asset_link, stylesheet_path, ssl)
         match = asset_link.match(ReplaceRexeg)
         url = match[1]
         hash = match[2] || ''
@@ -36,9 +36,12 @@ module CloudfrontAssetHost
         if url
           path = path_for_url(url, stylesheet_path)
 
-          if path.present? && File.exists?(path)
-            key = CloudfrontAssetHost.key_for_path(path) + path.gsub(Rails.public_path, '') + hash + query
-            "url(#{CloudfrontAssetHost.asset_host(url)}/#{key})"
+          if path.present? && (!CloudfrontAssetHost::Uploader.current_paths.include?(path) || CloudfrontAssetHost.disable_cdn_for_source?(path))
+            path_relative_to_public_path = path.gsub(Rails.public_path, '')
+            "url(#{CloudfrontAssetHost.asset_host(path_relative_to_public_path, nil, nil, ssl)}#{path_relative_to_public_path}#{hash}#{query})"
+          elsif path.present? && File.exists?(path)
+            key = CloudfrontAssetHost.key_for_path(path) + path.gsub(Rails.public_path, '') + hash
+            "url(#{CloudfrontAssetHost.asset_host(url, nil, true, ssl)}/#{key})"
           else
             puts "Could not extract path: #{path}"
             asset_link
